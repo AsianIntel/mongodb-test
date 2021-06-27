@@ -6,7 +6,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hyper = { version = "0.14", default-features = false, features = ["client", "http1", "runtime"] }
+hyper = { version = "0.14", default-features = false, features = ["client", "http1", "tcp"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
