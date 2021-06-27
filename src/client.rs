@@ -35,6 +35,9 @@ impl HttpClient {
         T: for<'de> Deserialize<'de>,
     {
         let res = self.request(Method::GET, uri, headers).await?;
+        println!("Status Code: {:?}", res.status());
+        println!("{:?}", res.headers());
+        println!("{:?}", res.body());
 
         let mut buf = body::aggregate(res.into_body()).await?;
         let mut bytes = vec![0; buf.remaining()];
