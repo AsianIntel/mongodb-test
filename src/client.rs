@@ -85,11 +85,12 @@ impl HttpClient {
     ) -> Pin<Box<dyn Future<Output = Result<Response<Body>, HttpError>> + 'a>> {
         Box::pin(async move {
             let mut request = Request::builder().uri(uri).method(&method);
+            println!("{:?}", uri);
 
             for header in headers {
                 request = request.header(header.0, header.1);
             }
-            
+
             let request = request.body(Body::empty())?;
             let response = self.inner.request(request).await?;
 
