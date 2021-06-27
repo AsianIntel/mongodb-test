@@ -94,7 +94,7 @@ impl HttpClient {
             request = request.header(header.0, header.1);
         }
 
-        let request = request.body(Body::empty())?;
+        let request = request.body(Body::empty()).unwrap();
         let response = self.inner.request(request).await?;
 
         Ok(response)

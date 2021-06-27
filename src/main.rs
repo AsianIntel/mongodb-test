@@ -12,7 +12,11 @@ const AWS_EC2_IP: &str = "169.254.169.254";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let client = HttpClient::default();
-    let creds = AwsCredential::get_from_ec2(&client).await.unwrap();
+    let creds = if let Ok(relative_uri) = std::env::var("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") {
+        AwsCredential::get_from_ecs(relative_uri, &client).await.unwrap()
+    } else {
+        AwsCredential::get_from_ec2(&client).await.unwrap()
+    };
     println!("{:?}", creds);
 
     Ok(())
