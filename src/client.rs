@@ -87,9 +87,9 @@ impl HttpClient {
 
             if response.status().is_redirection() {
                 if let Some(Ok(location)) = response.headers().get(LOCATION).map(|u| u.to_str()) {
-                    if let (Some(scheme), Some(host)) = (uri.scheme_str(), uri.host()) {
-                        let uri = format!("{}{}{}", scheme, host, location);
-                        return self.request(method, Uri::from_str(&uri)?, headers).await;
+                    if let (Some(scheme), Some(authority)) = (uri.scheme_str(), uri.authority()) {
+                        let uri = Uri::builder().scheme(scheme).authority(authority.as_str()).path_and_query(location).build()?;
+                        return self.request(method, uri, headers).await;
                     }
                 }
             }
