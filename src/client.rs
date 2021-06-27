@@ -1,13 +1,5 @@
-use hyper::{
-    body::{self, Buf},
-    client::HttpConnector,
-    Body,
-    Client as HyperClient,
-    Error as HyperError,
-    Method,
-    Request,
-    Response,
-};
+use std::{future::Future, pin::Pin};
+use hyper::{Body, Client as HyperClient, Error as HyperError, Method, Request, Response, body::{self, Buf}, client::HttpConnector, header::LOCATION};
 use serde::Deserialize;
 use serde_json::Error as SerdeError;
 
@@ -29,7 +21,7 @@ impl HttpClient {
     pub(crate) async fn get_and_deserialize_json<'a, T>(
         &self,
         uri: &str,
-        headers: impl IntoIterator<Item = &'a (&'a str, &'a str)>,
+        headers: &'a [(&'a str, &'a str)],
     ) -> Result<T, HttpError>
     where
         T: for<'de> Deserialize<'de>,
@@ -51,7 +43,7 @@ impl HttpClient {
     pub(crate) async fn get_and_read_string<'a>(
         &self,
         uri: &str,
-        headers: impl IntoIterator<Item = &'a (&'a str, &'a str)>,
+        headers: &'a [(&'a str, &'a str)],
     ) -> Result<String, HttpError> {
         self.request_and_read_string(Method::GET, uri, headers)
             .await
@@ -61,7 +53,7 @@ impl HttpClient {
     pub(crate) async fn put_and_read_string<'a>(
         &self,
         uri: &str,
-        headers: impl IntoIterator<Item = &'a (&'a str, &'a str)>,
+        headers: &'a [(&'a str, &'a str)],
     ) -> Result<String, HttpError> {
         self.request_and_read_string(Method::PUT, uri, headers)
             .await
@@ -72,7 +64,7 @@ impl HttpClient {
         &self,
         method: Method,
         uri: &str,
-        headers: impl IntoIterator<Item = &'a (&'a str, &'a str)>,
+        headers: &'a [(&'a str, &'a str)],
     ) -> Result<String, HttpError> {
         let res = self.request(method, uri, headers).await?;
 
@@ -85,22 +77,31 @@ impl HttpClient {
     }
 
     /// Executes an HTTP equest and returns the response.
-    pub(crate) async fn request<'a>(
-        &self,
+    pub(crate) fn request<'a>(
+        &'a self,
         method: Method,
-        uri: &str,
-        headers: impl IntoIterator<Item = &'a (&'a str, &'a str)>,
-    ) -> Result<Response<Body>, HttpError> {
-        let mut request = Request::builder().uri(uri).method(method);
+        uri: &'a str,
+        headers: &'a [(&'a str, &'a str)],
+    ) -> Pin<Box<dyn Future<Output = Result<Response<Body>, HttpError>> + 'a>> {
+        Box::pin(async move {
+            let mut request = Request::builder().uri(uri).method(&method);
 
-        for header in headers {
-            request = request.header(header.0, header.1);
-        }
+            for header in headers {
+                request = request.header(header.0, header.1);
+            }
+            
+            let request = request.body(Body::empty())?;
+            let response = self.inner.request(request).await?;
 
-        let request = request.body(Body::empty()).unwrap();
-        let response = self.inner.request(request).await.unwrap();
+            if response.status().is_redirection() {
+                if let Some(location) = response.headers().get(LOCATION) {
+                    let uri = format!("{}{}", uri, location.to_str().map_err(|_| HttpError::BuildingRequest)?);
+                    return self.request(method, &uri, headers).await;
+                }
+            }
 
-        Ok(response)
+            Ok(response)
+        })
     }
 }
 
