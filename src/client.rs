@@ -1,19 +1,10 @@
-use std::{future::Future, pin::Pin};
-use hyper::{Body, Client as HyperClient, Error as HyperError, Method, Request, Response, body::{self, Buf}, client::HttpConnector, header::LOCATION};
+use std::{error::Error, future::Future, pin::Pin, str::FromStr};
+use hyper::{Body, Client as HyperClient, Method, Request, Response, Uri, body::{self, Buf}, client::HttpConnector, header::LOCATION};
 use serde::Deserialize;
-use serde_json::Error as SerdeError;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HttpClient {
     inner: HyperClient<HttpConnector>,
-}
-
-#[derive(Debug)]
-pub(crate) enum HttpError {
-    BuildingRequest,
-    Request(HyperError),
-    InvalidUTF8,
-    Parsing(SerdeError),
 }
 
 impl HttpClient {
@@ -22,11 +13,11 @@ impl HttpClient {
         &self,
         uri: &str,
         headers: &'a [(&'a str, &'a str)],
-    ) -> Result<T, HttpError>
+    ) -> Result<T, Box<dyn Error>>
     where
         T: for<'de> Deserialize<'de>,
     {
-        let res = self.request(Method::GET, uri, headers).await?;
+        let res = self.request(Method::GET, Uri::from_str(uri)?, headers).await?;
         println!("Status Code: {:?}", res.status());
         println!("{:?}", res.headers());
         println!("{:?}", res.body());
@@ -44,7 +35,7 @@ impl HttpClient {
         &self,
         uri: &str,
         headers: &'a [(&'a str, &'a str)],
-    ) -> Result<String, HttpError> {
+    ) -> Result<String, Box<dyn Error>> {
         self.request_and_read_string(Method::GET, uri, headers)
             .await
     }
@@ -54,7 +45,7 @@ impl HttpClient {
         &self,
         uri: &str,
         headers: &'a [(&'a str, &'a str)],
-    ) -> Result<String, HttpError> {
+    ) -> Result<String, Box<dyn Error>> {
         self.request_and_read_string(Method::PUT, uri, headers)
             .await
     }
@@ -65,8 +56,8 @@ impl HttpClient {
         method: Method,
         uri: &str,
         headers: &'a [(&'a str, &'a str)],
-    ) -> Result<String, HttpError> {
-        let res = self.request(method, uri, headers).await?;
+    ) -> Result<String, Box<dyn Error>> {
+        let res = self.request(method, Uri::from_str(uri)?, headers).await?;
 
         let mut buf = body::aggregate(res.into_body()).await?;
         let mut bytes = vec![0; buf.remaining()];
@@ -80,11 +71,11 @@ impl HttpClient {
     pub(crate) fn request<'a>(
         &'a self,
         method: Method,
-        uri: &'a str,
+        uri: Uri,
         headers: &'a [(&'a str, &'a str)],
-    ) -> Pin<Box<dyn Future<Output = Result<Response<Body>, HttpError>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Response<Body>, Box<dyn Error>>> + 'a>> {
         Box::pin(async move {
-            let mut request = Request::builder().uri(uri).method(&method);
+            let mut request = Request::builder().uri(&uri).method(&method);
             println!("{:?}", uri);
 
             for header in headers {
@@ -95,37 +86,15 @@ impl HttpClient {
             let response = self.inner.request(request).await?;
 
             if response.status().is_redirection() {
-                if let Some(location) = response.headers().get(LOCATION) {
-                    let uri = format!("{}{}", uri, location.to_str().unwrap());
-                    return self.request(method, &uri, headers).await;
+                if let Some(Ok(location)) = response.headers().get(LOCATION).map(|u| u.to_str()) {
+                    if let (Some(scheme), Some(host)) = (uri.scheme_str(), uri.host()) {
+                        let uri = format!("{}{}{}", scheme, host, location);
+                        return self.request(method, Uri::from_str(&uri)?, headers).await;
+                    }
                 }
             }
 
             Ok(response)
         })
-    }
-}
-
-impl From<hyper::http::Error> for HttpError {
-    fn from(_err: hyper::http::Error) -> Self {
-        Self::BuildingRequest
-    }
-}
-
-impl From<HyperError> for HttpError {
-    fn from(err: HyperError) -> Self {
-        Self::Request(err)
-    }
-}
-
-impl From<SerdeError> for HttpError {
-    fn from(err: SerdeError) -> Self {
-        Self::Parsing(err)
-    }
-}
-
-impl From<std::string::FromUtf8Error> for HttpError {
-    fn from(_err: std::string::FromUtf8Error) -> Self {
-        Self::InvalidUTF8
     }
 }

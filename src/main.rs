@@ -3,7 +3,7 @@
 mod client;
 
 use std::error::Error;
-use client::{HttpClient, HttpError};
+use client::HttpClient;
 use serde::Deserialize;
 
 const AWS_ECS_IP: &str = "169.254.170.2";
@@ -39,7 +39,7 @@ struct AwsCredential {
 impl AwsCredential {
 
     /// Obtains credentials from the ECS endpoint.
-    async fn get_from_ecs(relative_uri: String, http_client: &HttpClient) -> Result<Self, HttpError> {
+    async fn get_from_ecs(relative_uri: String, http_client: &HttpClient) -> Result<Self, Box<dyn Error>> {
         // Use the local IP address that AWS uses for ECS agents.
         let uri = format!("http://{}/{}", AWS_ECS_IP, relative_uri);
 
@@ -49,7 +49,7 @@ impl AwsCredential {
     }
 
     /// Obtains temporary credentials for an EC2 instance to use for authentication.
-    async fn get_from_ec2(http_client: &HttpClient) -> Result<Self, HttpError> {
+    async fn get_from_ec2(http_client: &HttpClient) -> Result<Self, Box<dyn Error>> {
         let temporary_token = http_client
             .put_and_read_string(
                 &format!("http://{}/latest/api/token", AWS_EC2_IP),
