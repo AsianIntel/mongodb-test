@@ -96,7 +96,7 @@ impl HttpClient {
 
             if response.status().is_redirection() {
                 if let Some(location) = response.headers().get(LOCATION) {
-                    let uri = format!("{}{}", uri, location.to_str().map_err(|_| HttpError::BuildingRequest)?);
+                    let uri = format!("{}{}", uri, location.to_str().unwrap());
                     return self.request(method, &uri, headers).await;
                 }
             }
